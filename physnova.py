@@ -4,8 +4,6 @@ import sys
 
 pg.init()
 
-print(f"physnova 1.0 (using pygame-ce 2.4.1)")
-
 def error(text: str):
     print("Произошла ошибка!")
     print(text)
@@ -20,7 +18,7 @@ class Transform:
         self.Cos = math.cos(angle)
 
 
-def transformVector(vector: pg.Vector2, transform: Transform):
+def TransformVector(vector: pg.Vector2, transform: Transform):
     return pg.Vector2(transform.Cos * vector.x - transform.Sin * vector.y + transform.Position.x,
                       transform.Sin * vector.x + transform.Cos * vector.y + transform.Position.y)
 
@@ -116,14 +114,14 @@ class Rigidbody:
                 pg.Vector2(left, bottom)]
     
     def Move(self, value: pg.Vector2):
-        if value.xy != (0, 0):
+        if not (value[0] == 0 and value[1] == 0):
             self.Position += value
             self.__transformUpdateRequired = True
             self.__aabbUpdateRequired = True
 
     def SetPosition(self, value: pg.Vector2 | tuple):
-        if value.xy != self.Position.xy:
-            self.Position = pg.Vector2(value)
+        if not (value[0] == self.Position[0] and value[1] == self.Position[1]):
+            self.Position = pg.Vector2(value[0], value[1])
             self.__transformUpdateRequired = True
             self.__aabbUpdateRequired = True
 
@@ -183,7 +181,7 @@ class Rigidbody:
 
             for i in range(len(self.Vertices)):
                 vector = self.Vertices[i]
-                self.__transformedVertices[i] = transformVector(vector, transform)
+                self.__transformedVertices[i] = TransformVector(vector, transform)
 
             self.__transformUpdateRequired = False
         
@@ -198,7 +196,7 @@ class Rigidbody:
         return self.__transformedSurface
 
     def Draw(self, screen: pg.Surface, cameraZoom: int, cameraPosition: pg.Vector2, showHitbox: bool=False):
-        camPos = cameraPosition - pg.Vector2(screen.get_width() / 2, screen.get_height() / 2)
+        camPos = cameraPosition
         surface = self.GetSurface()
         position = self.Position * cameraZoom - camPos
         if self.Shape == "circle":
@@ -826,9 +824,13 @@ class Resolver:
                 Resolver.resolvingCollisionsFunctions[resolvingCollisionMethod](CollisionManifold(mainBody, otherBody, normal, depth, Collisions.FindContactPoints(mainBody, otherBody)))
 
     @staticmethod
-    def UpdateBodies(dt: float, gravity: pg.Vector2, bodies: list[Rigidbody]):
+    def UpdateBodies(screenHeight: int, dt: float, gravity: pg.Vector2, bodies: list[Rigidbody]):
         for body in bodies:
             body.Update(dt, gravity)
+
+            if not body.IsStatic and body.GetAABB().min.y >= screenHeight:
+                bodies.remove(body)
+                continue
 
 
 class World:
@@ -934,16 +936,15 @@ class World:
         error(f"Тела с индексом \"{index}\" не существует.")
     
     def Update(self, screen: pg.Surface, dt: float, iterations: int):
+        self.BodyCount = len(self.__bodies)
         iterations = pg.math.clamp(iterations, self.MinIterations, self.MaxIterations)
         dt /= iterations
         for _ in range(iterations):
             self.__contactPairs.clear()
 
-            Resolver.UpdateBodies(dt, self.__gravity, self.__bodies)
+            Resolver.UpdateBodies(screen.get_height(), dt, self.__gravity, self.__bodies)
             Resolver.BroadPhase(self.__bodies, self.__contactPairs)
             Resolver.NarrowPhase(self.__bodies, self.__contactPairs, 2)
-
-        self.BodyCount = len(self.__bodies)
 
         for i in range(len(self.__bodies)):
             self.__bodies[i].Draw(screen, self.CameraZoom, self.CameraPosition)
